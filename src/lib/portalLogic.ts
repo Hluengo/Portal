@@ -8,6 +8,12 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   pie: 'PIE / Neurodiversidad',
 };
 
+export const INSTITUTIONAL_EMAIL_DOMAIN = 'mmddconcepcion.cl';
+
+export function isInstitutionalEmail(email: string): boolean {
+  return normalizeEmail(email).endsWith(`@${INSTITUTIONAL_EMAIL_DOMAIN}`);
+}
+
 export function isValidAppUrl(rawUrl: string): boolean {
   if (!rawUrl || typeof rawUrl !== 'string') return false;
   try {

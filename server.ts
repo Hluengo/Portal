@@ -30,6 +30,7 @@ import {
 import { probeAppHeadersSafe, REPOSITORY_AUDIT_REPORT } from './server/repoAudit.ts';
 import {
   canUserViewApp,
+  isInstitutionalEmail,
   isSafeAvatarDataUrl,
   isValidAppUrl,
   normalizeEmail,
@@ -226,6 +227,13 @@ async function createAppServer(): Promise<express.Express> {
       res.status(400).json({
         error:
           'Ingresa tu nombre completo, correo institucional válido y contraseña (mínimo 8 caracteres).',
+      });
+      return;
+    }
+    if (!isInstitutionalEmail(email)) {
+      res.status(400).json({
+        error:
+          'El registro está limitado a correos institucionales @mmddconcepcion.cl.',
       });
       return;
     }
@@ -1055,6 +1063,13 @@ async function createAppServer(): Promise<express.Express> {
       res.status(400).json({
         error:
           'Datos inválidos: requiere nombre, correo válido, rol permitido y contraseña de al menos 8 caracteres.',
+      });
+      return;
+    }
+    if (!isInstitutionalEmail(email) && role !== 'admin') {
+      res.status(400).json({
+        error:
+          'Los usuarios institucionales deben usar un correo @mmddconcepcion.cl.',
       });
       return;
     }

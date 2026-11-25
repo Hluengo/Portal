@@ -1,4 +1,8 @@
 import type { CalendarEventItem, GoogleCalendarItem } from '../types/portal.ts';
+import {
+  INSTITUTIONAL_EMAIL_DOMAIN,
+  isInstitutionalEmail,
+} from '../lib/portalLogic.ts';
 
 /**
  * Google OAuth directo mediante Google Identity Services.
@@ -99,6 +103,11 @@ async function fetchGoogleIdentity(accessToken: string): Promise<GoogleIdentity>
   const data = (await response.json()) as { email?: string };
   if (!data.email) {
     throw new Error('Google no devolvió el correo de la cuenta seleccionada.');
+  }
+  if (!isInstitutionalEmail(data.email)) {
+    throw new Error(
+      `Solo pueden conectar Google Calendar las cuentas @${INSTITUTIONAL_EMAIL_DOMAIN}.`
+    );
   }
   return { email: data.email };
 }
