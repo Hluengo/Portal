@@ -1,6 +1,7 @@
+import 'dotenv/config';
 import fs from 'node:fs';
-import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
+import LibsqlDatabase from 'libsql';
 import type {
   AccessEventType,
   AccessLogEntry,
@@ -9,20 +10,72 @@ import type {
   UserRole,
 } from '../src/types/portal.ts';
 
-const dbPath =
+/**
+ * Conexión a la base de datos:
+ * - Local (desarrollo): archivo SQLite en PORTAL_DB_PATH o en la raíz del proyecto.
+ * - Vercel (producción): si LIBSQL_URL está definida, se usa la base remota de
+ *   Turso, que conserva usuarios, sesiones y monitoreo entre peticiones.
+ * `libsql` expone la misma API síncrona de better-sqlite3/node:sqlite,
+ * por lo que el resto del código no cambia.
+ */
+const remoteUrl = (process.env.LIBSQL_URL || '').trim();
+const remoteAuthToken = (process.env.LIBSQL_AUTH_TOKEN || '').trim();
+
+const localDbPath =
   process.env.PORTAL_DB_PATH && process.env.PORTAL_DB_PATH.trim()
     ? path.resolve(process.env.PORTAL_DB_PATH.trim())
-    : path.resolve(process.cwd(), 'portal_institucional.db');
+    : process.env.VERCEL && !remoteUrl
+      ? // En Vercel el sistema de archivos es de solo lectura salvo /tmp.
+        // Sin LIBSQL_URL los datos serían efímeros: se usa /tmp solo como
+        // red de seguridad y se avisa en los logs.
+        '/tmp/portal_institucional.db'
+      : path.resolve(process.cwd(), 'portal_institucional.db');
 
-fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+if (process.env.VERCEL && !remoteUrl) {
+  console.error(
+    '[db] ADVERTENCIA: LIBSQL_URL no está configurada en Vercel. ' +
+      'Los usuarios y el monitoreo NO persistirán entre peticiones.'
+  );
+}
 
-export const db = new DatabaseSync(dbPath);
+interface SqlStatement {
+  get(...params: unknown[]): unknown;
+  all(...params: unknown[]): unknown[];
+  run(...params: unknown[]): { changes: number; lastInsertRowid: number | bigint };
+}
+
+interface SqlDatabase {
+  prepare(sql: string): SqlStatement;
+  exec(sql: string): void;
+}
+
+type LibsqlConstructor = new (
+  filename: string,
+  options?: { authToken?: string }
+) => SqlDatabase;
+
+const Libsql = LibsqlDatabase as unknown as LibsqlConstructor;
+
+if (remoteUrl) {
+  console.log('[db] Conectando a la base de datos remota (LIBSQL_URL).');
+} else {
+  fs.mkdirSync(path.dirname(localDbPath), { recursive: true });
+}
+
+export const db: SqlDatabase = remoteUrl
+  ? new Libsql(remoteUrl, { authToken: remoteAuthToken })
+  : new Libsql(localDbPath);
 
 export function initDatabase(): void {
-  db.exec(`
-    PRAGMA journal_mode = WAL;
-    PRAGMA foreign_keys = ON;
+  // Los PRAGMA solo aplican a SQLite local; en la base remota de Turso se omiten.
+  try {
+    db.exec('PRAGMA journal_mode = WAL');
+    db.exec('PRAGMA foreign_keys = ON');
+  } catch (err) {
+    console.warn('[db] PRAGMA omitidos:', (err as Error).message);
+  }
 
+  db.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       email TEXT NOT NULL UNIQUE,
@@ -99,12 +152,24 @@ export function initDatabase(): void {
 }
 
 function ensureUsersAvatarColumn(): void {
-  const columns = db
-    .prepare('PRAGMA table_info(users)')
-    .all() as Array<{ name: string }>;
-  const hasAvatar = columns.some((col) => col.name === 'avatar_url');
-  if (!hasAvatar) {
-    db.exec('ALTER TABLE users ADD COLUMN avatar_url TEXT');
+  if (usersHasColumn('avatar_url')) return;
+  db.exec('ALTER TABLE users ADD COLUMN avatar_url TEXT');
+}
+
+function usersHasColumn(column: string): boolean {
+  try {
+    const columns = db
+      .prepare('PRAGMA table_info(users)')
+      .all() as Array<{ name: string }>;
+    return columns.some((col) => col.name === column);
+  } catch {
+    // La base remota puede no admitir PRAGMA: se detecta la columna por sondeo.
+    try {
+      db.prepare(`SELECT ${column} FROM users LIMIT 0`).all();
+      return true;
+    } catch {
+      return false;
+    }
   }
 }
 
@@ -284,7 +349,7 @@ export function mapRowToApp(row: Record<string, unknown>): PortalApp {
   };
 }
 
-export const activeDbPath = dbPath;
+export const activeDbPath = remoteUrl ? 'base remota (Turso)' : localDbPath;
 
 export function mapRowToUser(row: Record<string, unknown>): PortalUser {
   return {

@@ -11,3 +11,4 @@ coverage/
 *.db-shm
 data/
 .playwright-cli/
+.vercel/

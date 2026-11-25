@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import path from 'node:path';
 import express from 'express';
 import dotenv from 'dotenv';
@@ -44,7 +45,6 @@ import type {
 } from './src/types/portal.ts';
 
 dotenv.config();
-initDatabase();
 
 const VALID_ROLES: ReadonlySet<UserRole> = new Set([
   'admin',
@@ -117,10 +117,11 @@ const VALID_ACCESS_EVENT_TYPES: ReadonlySet<AccessEventType> = new Set([
   'app_open',
 ]);
 
-async function createAppServer() {
+async function createAppServer(): Promise<express.Express> {
   const app = express();
   app.set('trust proxy', 1);
   app.use(express.json({ limit: '1mb' }));
+  initDatabase();
 
   const ADMIN_OWNER_EMAIL = 'hluengo.ro@gmail.com';
 
@@ -1123,10 +1124,18 @@ async function createAppServer() {
   // Frontend serving (Vite dev middleware or static dist/)
   if (process.env.NODE_ENV === 'production') {
     const distDir = path.resolve(process.cwd(), 'dist');
-    app.use(express.static(distDir));
-    app.get('*', (_req, res) => {
-      res.sendFile(path.join(distDir, 'index.html'));
-    });
+    const indexHtml = path.join(distDir, 'index.html');
+    if (fs.existsSync(indexHtml)) {
+      app.use(express.static(distDir));
+      app.get('*', (_req, res) => {
+        res.sendFile(indexHtml);
+      });
+    } else {
+      // En Vercel los archivos estáticos los sirve el CDN desde outputDirectory.
+      app.get('*', (_req, res) => {
+        res.status(404).json({ error: 'Ruta no encontrada.' });
+      });
+    }
   } else {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
@@ -1136,10 +1145,22 @@ async function createAppServer() {
     app.use(vite.middlewares);
   }
 
-  const port = Number(process.env.PORT || 3000);
-  app.listen(port, '0.0.0.0', () => {
-    console.log(`Portal Institucional Escolar escuchando en http://0.0.0.0:${port}`);
-  });
+  // Manejador de errores explícito (recomendado para Vercel Functions).
+  app.use(
+    (
+      err: unknown,
+      _req: express.Request,
+      res: express.Response,
+      _next: express.NextFunction
+    ) => {
+      console.error('Error no controlado en el portal:', err);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Error interno del servidor.' });
+      }
+    }
+  );
+
+  return app;
 }
 
 function parseAndValidateAppInput(body: Record<string, unknown>):
@@ -1253,7 +1274,42 @@ function parseAndValidateAppInput(body: Record<string, unknown>):
   };
 }
 
-createAppServer().catch((err) => {
-  console.error('Error iniciando el servidor del portal:', err);
-  process.exit(1);
-});
+let appPromise: Promise<express.Express> | null = null;
+
+function getPortalApp(): Promise<express.Express> {
+  if (!appPromise) {
+    appPromise = createAppServer();
+  }
+  return appPromise;
+}
+
+// En Vercel la app se exporta como función serverless (se invoca por petición);
+// en local se levanta el servidor Express tradicional en el puerto indicado.
+async function requestHandler(
+  req: IncomingMessage,
+  res: ServerResponse
+): Promise<void> {
+  const app = await getPortalApp();
+  (app as unknown as (req: IncomingMessage, res: ServerResponse) => void)(
+    req,
+    res
+  );
+}
+
+if (!process.env.VERCEL) {
+  getPortalApp()
+    .then((app) => {
+      const port = Number(process.env.PORT || 3000);
+      app.listen(port, '0.0.0.0', () => {
+        console.log(
+          `Portal Institucional Escolar escuchando en http://0.0.0.0:${port}`
+        );
+      });
+    })
+    .catch((err) => {
+      console.error('Error iniciando el servidor del portal:', err);
+      process.exit(1);
+    });
+}
+
+export default requestHandler;
