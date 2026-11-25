@@ -18,7 +18,7 @@ import { CalendarView } from './components/CalendarView.tsx';
 import { KeepAliveWorkspace } from './components/KeepAliveWorkspace.tsx';
 import { MonitoringView } from './components/MonitoringView.tsx';
 import { ProfileSettingsView } from './components/ProfileSettingsView.tsx';
-import { SsoAuditView } from './components/SsoAuditView.tsx';
+
 import {
   getUserInitials,
   isSafeAvatarDataUrl,
@@ -249,7 +249,6 @@ export default function App() {
       icon: UserCog,
       visible: true,
     },
-    { id: 'sso', label: 'Integraciones y SSO', icon: GitMerge, visible: true },
     { id: 'monitoring', label: 'Monitoreo', icon: Activity, visible: isAdmin },
     { id: 'admin', label: 'Administración', icon: Settings, visible: isAdmin },
   ];
@@ -514,13 +513,6 @@ export default function App() {
                 setUser(updatedUser);
                 setFavoriteIds(new Set(updatedFavoriteIds));
               }}
-              onBack={() => setActiveView('catalog')}
-            />
-          )}
-
-          {activeView === 'sso' && (
-            <SsoAuditView
-              googleCalendarConnected={googleConnected}
               onBack={() => setActiveView('catalog')}
             />
           )}
