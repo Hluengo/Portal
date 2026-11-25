@@ -1,8 +1,5 @@
 import type { CalendarEventItem, GoogleCalendarItem } from '../types/portal.ts';
-import {
-  INSTITUTIONAL_EMAIL_DOMAIN,
-  isInstitutionalEmail,
-} from '../lib/portalLogic.ts';
+import { INSTITUTIONAL_EMAIL_DOMAIN, isInstitutionalEmail } from '../lib/portalLogic.ts';
 
 /**
  * Google OAuth directo mediante Google Identity Services.
