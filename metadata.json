@@ -1,0 +1,6 @@
+{
+  "name": "Portal Institucional Escolar",
+  "description": "Portal institucional con catálogo administrable de aplicaciones escolares, favoritos, acceso a Gmail, calendario compartido de Google y control de acceso.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
